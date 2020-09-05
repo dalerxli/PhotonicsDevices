@@ -1,0 +1,279 @@
+#删除历史
+del('History.txt');
+switchtolayout;
+#波长范围
+lambda=(500:100:2000)*1e-9;
+#对应角频率
+w=2*pi*c/lambda;
+#Ag的Drude模型参数
+epsinf=3.7;
+wp=1.37e16;
+gamap=0.27e14;
+eps_m=epsinf-wp^2/(w^2+1i*gamap*w);
+#用来存不同波长的drude参数矩阵pp
+pp=matrix(length(lambda),3);
+#transpose表示矩阵转置
+pp(1:length(lambda),1)=transpose(lambda);
+pp(1:length(lambda),2)=transpose(real(eps_m));
+pp(1:length(lambda),3)=transpose(imag(eps_m));
+#自定义一个材料
+sampledData = [c/lambda,eps_m]; 
+setmaterial('Ag',"max coefficients",2); 
+setmaterial('Ag','sampled data',sampledData);
+#波导参数
+delta=10e-9;
+cavity1_l=400e-9;
+cavity1_w=400e-9;
+gap1=10e-9;
+gap2=10e-9;
+shift1=0*1e-9;
+shift2=100*1e-9;
+shift3=0*1e-9;
+shift4=70*1e-9;
+pixel=20;
+
+waveguide1_l=100e-9;
+waveguide1_w=100e-9;
+waveguide2_l=100e-9;
+waveguide2_w=100e-9;
+width_bottom=200e-9;
+width_top=400e-9;
+total_l=waveguide1_l+gap1+cavity1_l+gap2+waveguide2_l;
+
+#种群大小
+NIND = 1;
+
+#初始生成种群
+for (kk = 1:NIND){
+   Q_MATRIX = round(randmatrix(pixel,pixel));
+   del('Q_MATRIX_'+num2str(kk)+'.txt');
+   write('Q_MATRIX_'+num2str(kk)+'.txt',num2str(Q_MATRIX));
+}
+
+# 新旧透射谱
+TRANSMISSION = 501;
+transmission_result_old = matrix(NIND, TRANSMISSION);
+transmission_result_new = matrix(NIND, TRANSMISSION);
+
+# 新旧结构参数
+structure_result_old = matrix(NIND, pixel*pixel);
+structure_result_new = matrix(NIND, pixel*pixel);
+
+# 执行第一次
+select('structure group');
+set('waveguide1_l',waveguide1_l);
+set('waveguide1_w',waveguide1_w);
+set('waveguide2_l',waveguide2_l);
+set('waveguide2_w',waveguide2_w);
+set('width_bottom',width_bottom);
+set('width_top',width_top);
+
+total_w=width_bottom+cavity1_w+width_top;
+select('structure group');
+set('cavity1_w',cavity1_w);
+set('cavity1_l',cavity1_l);
+set('gap1',gap1);
+set('gap2',gap2);
+set('shift1',shift1);
+set('shift2',shift2);
+set('shift3',shift3);
+set('shift4',shift4);
+
+select('structure group');
+switchtolayout;
+set('index', NIND);
+runsetup;
+
+select('FDTD');
+set('x',total_l/2);
+set('x span',total_l);
+set('y',0);
+set('y span',total_w);
+
+select('source_1');
+set('x',5e-9);
+set('y',0);
+set('y span',total_w);
+
+select('mesh_input_gap');
+set('x min',waveguide1_l);
+set('x max',waveguide1_l+gap1);
+set('y',0);
+set('y span',waveguide1_w);
+set('dx',gap1/5);
+set('dy',cavity1_l/pixel/4);
+
+select('mesh_cavity1');
+set('x',waveguide1_l+gap1+cavity1_l/2+shift1);
+set('x span',cavity1_l);
+set('y',shift2);
+set('y span',cavity1_w);
+set('dx',cavity1_l/pixel/4);
+set('dy',cavity1_l/pixel/4);
+
+select('mesh_output_gap');
+set('x min',waveguide1_l+gap1+cavity1_l);
+set('x max',waveguide1_l+gap1+cavity1_l+gap2);
+set('y',0);
+set('y span',waveguide2_w);
+set('dx',gap2/5);
+set('dy',cavity1_l/pixel/4);
+
+select('transmission');
+set('x',total_l);
+set('y',0);
+set('y span',total_w);
+
+# 获取结构参数
+Q_MATRIX=readdata('Q_MATRIX_'+num2str(NIND)+'.txt');
+for (jj=1:pixel)
+{
+    structure_result_old(NIND,(jj-1)*pixel+1:jj*pixel) = Q_MATRIX(jj, 1:pixel);
+}
+#更新光源
+select('source_1');
+updatesourcemode;
+run;
+#运行得到透射谱数据
+for (kk=1:100){
+     if (haveresult('transmission','T')){
+         temp=getresult('transmission','T');
+         transmission_result_old(NIND,:)=pinch(temp.T);
+         kk=100;
+        }
+     run;
+}
+#记录最优结构
+del('Q_best.txt');
+write('Q_best.txt',num2str(Q_MATRIX));
+
+#二进制搜索
+for (index = 1:pixel*pixel){    
+    
+    structure_result_new = structure_result_old;
+    if (structure_result_old(1,index) == 0){
+        structure_result_new(1,index) = 1;
+    } else{
+        structure_result_new(1,index) = 0;
+    }
+    
+    Chrom_new = structure_result_new;
+      
+    # 新结构参数
+    for (line_num = 1: NIND){
+        Q_MATRIX_NEW = zeros(pixel, pixel);
+        line = Chrom_new(line_num, :);
+        for (line_num_new = 1:pixel){
+            Q_MATRIX_NEW(line_num_new,:) = line(1,(line_num_new-1)*pixel+1:line_num_new*pixel);    
+        }
+        del('Q_MATRIX_'+num2str(line_num)+'.txt');
+        write('Q_MATRIX_'+num2str(line_num)+'.txt', num2str(Q_MATRIX_NEW));     
+    }  
+    
+    # 对新结构参数进行仿真
+    ?msg = "ite="+num2str(index);
+    select('structure group');
+    switchtolayout;
+    set('waveguide1_l',waveguide1_l);
+    set('waveguide1_w',waveguide1_w);
+    set('waveguide2_l',waveguide2_l);
+    set('waveguide2_w',waveguide2_w);
+    set('width_bottom',width_bottom);
+    set('width_top',width_top);
+
+    total_w=width_bottom+cavity1_w+width_top;
+    select('structure group');
+    set('cavity1_w',cavity1_w);
+    set('cavity1_l',cavity1_l);
+    set('gap1',gap1);
+    set('gap2',gap2);
+    set('shift1',shift1);
+    set('shift2',shift2);
+    set('shift3',shift3);
+    set('shift4',shift4);
+
+    select('structure group');
+    switchtolayout;
+    set('index', NIND);
+    runsetup;
+
+    select('FDTD');
+    set('x',total_l/2);
+    set('x span',total_l);
+    set('y',0);
+    set('y span',total_w);
+
+    select('source_1');
+    set('x',5e-9);
+    set('y',0);
+    set('y span',total_w);
+
+    select('mesh_input_gap');
+    set('x min',waveguide1_l);
+    set('x max',waveguide1_l+gap1);
+    set('y',0);
+    set('y span',waveguide1_w);
+    set('dx',gap1/5);
+    set('dy',cavity1_l/pixel/4);
+
+    select('mesh_cavity1');
+    set('x',waveguide1_l+gap1+cavity1_l/2+shift1);
+    set('x span',cavity1_l);
+    set('y',shift2);
+    set('y span',cavity1_w);
+    set('dx',cavity1_l/pixel/4);
+    set('dy',cavity1_l/pixel/4);
+
+    select('mesh_output_gap');
+    set('x min',waveguide1_l+gap1+cavity1_l);
+    set('x max',waveguide1_l+gap1+cavity1_l+gap2);
+    set('y',0);
+    set('y span',waveguide2_w);
+    set('dx',gap2/5);
+    set('dy',cavity1_l/pixel/4);
+
+    select('transmission');
+    set('x',total_l);
+    set('y',0);
+    set('y span',total_w);
+           
+    # 获取新结构参数
+    Q_MATRIX=readdata('Q_MATRIX_'+num2str(NIND)+'.txt');
+    for (jj=1:pixel)
+    {
+        structure_result_new(NIND,(jj-1)*pixel+1:jj*pixel) = Q_MATRIX(jj, 1:pixel);
+    }
+    # 更新光源
+    select('source_1');
+    updatesourcemode;
+    run;
+    # 运行得到新结构的透射谱
+    for (kk=1:100){
+        if (haveresult('transmission','T')){
+            temp=getresult('transmission','T');
+            transmission_result_new(NIND,:)=pinch(temp.T); 
+            kk=100;
+        }
+        run;
+    }
+    #设置目标函数
+    target_transmission = 1;
+    Obj_old = abs(target_transmission-transmission_result_old(NIND, 417));
+    Obj_new = abs(target_transmission-transmission_result_new(NIND, 417));
+    
+    #记录历史数据
+    write('History.txt',"ite="+num2str(index));
+    write('History.txt',"Obj_old="+num2str(Obj_old));
+    write('History.txt',"Obj_new="+num2str(Obj_new));
+    
+    #判断是否更新结构
+    dc = Obj_new - Obj_old;
+    
+    if(dc < 0){
+        structure_result_old = structure_result_new;
+        transmission_result_old = transmission_result_new;
+        del('Q_best.txt');
+        write('Q_best.txt',num2str(Q_MATRIX)); 
+    }        
+}
+

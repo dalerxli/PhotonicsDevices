@@ -1,0 +1,227 @@
+#w1=3585nm;   #原设置
+#w2=215[nm];
+
+nm=1e-9;
+um=1e-6;
+waveguide_w=400*nm;	#输入波导的宽度
+waveguide_h=250*nm;	#输入波导的高度
+waveguide_l=3*um;	#输入波导的长度
+waveguide_w_2=3*um;	#输出波导的宽度
+waveguide_h_2=250*nm;	#输出波导的高度
+waveguide_l_2=3*um;	#输出波导的长度
+gap=0.1*um;	#输出波导间距
+substrate_h=3*um;	#二氧化硅衬底的厚度
+
+QR_code=(0.025*40)*um;	#二维码尺寸
+pixel=40;		#像素
+size0=QR_code/pixel;
+
+mm=500;
+
+#种群大小
+NIND = 50;
+#初始生成种群
+for (kk = 1:NIND){
+   Q_MATRIX = round(randmatrix(pixel,pixel));
+   del('Q_MATRIX_'+num2str(kk)+'.txt');
+   write('Q_MATRIX_'+num2str(kk)+'.txt',num2str(Q_MATRIX));  
+}
+
+c1 = 1.49445;
+c2 = 1.49445;
+#初始化速度
+Vmax=1;
+Vmin=-1;
+V = (randmatrix(NIND,1600)-0.5)*2*Vmax;
+
+# 最大遗传代数
+MAXGEN = 200; 
+# 开始演进类算法优化
+TRANSMISSION = 100;
+
+random_structure_parameters = matrix(NIND, pixel*pixel);
+transmission_result = matrix(NIND, TRANSMISSION);
+
+for (cal = 1:NIND){
+    ?cal;
+    switchtolayout;
+    select('structure group');
+    set('waveguide_w',waveguide_w);
+    set('waveguide_h',waveguide_h);
+    set('waveguide_l',waveguide_l);
+    set('waveguide_w_2',waveguide_w_2);
+    set('waveguide_h_2',waveguide_h_2);
+    set('waveguide_l_2',waveguide_l_2);
+    set('gap',gap);
+    set('substrate_h',substrate_h);
+    set('QR_code',QR_code);
+    set('pixel',pixel);
+    set('mm',mm);
+    set('name1',cal);
+
+    select('varFDTD');
+    set('x min',-waveguide_l);
+    set('x max',QR_code+waveguide_l);
+    set('y',0);
+    set('y span',QR_code*4);
+    set('z max',waveguide_h/2+substrate_h);
+    set('z min',-substrate_h-waveguide_h/2);
+
+    select('output_up');
+    set('x',QR_code+waveguide_l);
+
+    runsetup;
+    run;
+        
+    # 获取结构参数
+    Q_MATRIX=readdata('Q_MATRIX_'+num2str(cal)+'.txt');
+    for (jj=1:pixel)
+    {
+        random_structure_parameters(cal,(jj-1)*pixel+1:jj*pixel) = Q_MATRIX(jj, 1:pixel);
+    }
+
+    for (kk=1:100){
+        if (haveresult('output_up','T')){
+            temp=getresult('output_up','T');
+            transmission_result(cal,:)=pinch(temp.T);
+            kk=100;
+        }
+        run;
+    }
+}
+
+# 作为参数输入matlab
+matlabput(random_structure_parameters, transmission_result, NIND);
+
+matlab("
+
+    ObjV = zeros(NIND, 1);
+    target_transmission = 0.95*ones(NIND, 100);
+    
+    for number = 1:NIND;
+        ObjV(number,1) = (sum(abs(target_transmission(1, :)-transmission_result(number, :))));
+    end
+    
+    % 个体极值和群体极值
+    [bestfitness,bestindex] = min(ObjV);
+    % 全局最佳    
+    zbest=random_structure_parameters(bestindex,:);
+    % 个体最佳  
+    gbest=random_structure_parameters;
+    fitnessgbest=ObjV;
+    % 全局最佳适应度值
+    fitnesszbest=bestfitness; 
+");
+
+matlabget(zbest);
+matlabget(gbest);
+matlabget(fitnessgbest); 
+matlabget(fitnesszbest); 
+
+
+for (ite = 1: MAXGEN){
+    SWO_result=matrix(NIND,100);
+    for (ii = 1:NIND){
+        
+        ?ite;
+        ?ii;
+        # 速度更新
+        V(ii,:) = V(ii,:) + c1*rand*(gbest(ii,:) - random_structure_parameters(ii,:)) + c2*rand*(zbest - random_structure_parameters(ii,:));
+        # 位置更新        
+        for (kk=1:1600){
+            s_v = 1/(1+exp(-V(ii,kk)));
+            
+            if(rand<=s_v){
+                random_structure_parameters(ii,kk) = 1;                
+            }else{
+                random_structure_parameters(ii,kk) = 0;   
+            }          
+            
+        }
+        
+        # 保存为本地文件
+        for (line_num = 1: NIND){
+        Q_MATRIX_NEW = zeros(pixel, pixel);
+        line = random_structure_parameters(line_num, :);
+        for (line_num_new = 1:pixel){
+            Q_MATRIX_NEW(line_num_new,:) = line(1,(line_num_new-1)*pixel+1:line_num_new*pixel);    
+        }
+        del('Q_MATRIX_'+num2str(line_num)+'.txt');
+        write('Q_MATRIX_'+num2str(line_num)+'.txt', num2str(Q_MATRIX_NEW));     
+        } 
+        
+        switchtolayout;
+        select('structure group');
+        set('waveguide_w',waveguide_w);
+        set('waveguide_h',waveguide_h);
+        set('waveguide_l',waveguide_l);
+        set('waveguide_w_2',waveguide_w_2);
+        set('waveguide_h_2',waveguide_h_2);
+        set('waveguide_l_2',waveguide_l_2);
+        set('gap',gap);
+        set('substrate_h',substrate_h);
+        set('QR_code',QR_code);
+        set('pixel',pixel);
+        set('mm',mm);
+        set('name1',cal);
+
+        select('varFDTD');
+        set('x min',-waveguide_l);
+        set('x max',QR_code+waveguide_l);
+        set('y',0);
+        set('y span',QR_code*4);
+        set('z max',waveguide_h/2+substrate_h);
+        set('z min',-substrate_h-waveguide_h/2);
+
+        select('output_up');
+        set('x',QR_code+waveguide_l);
+
+        runsetup;
+        run;
+
+        for (kk=1:100){
+            if (haveresult('output_up','T')){
+                temp=getresult('output_up','T');
+                SWO_result(cal,:)=pinch(temp.T);
+                kk=100;
+            }
+            run;
+        }
+
+    }
+    
+    target_transmission = 0.95*ones(NIND, 100);    
+    
+    for (jj=1:NIND){
+        # 个体最优更新
+        #if (abs(0.68-SWO_result(jj, 183)) + abs(0.62-SWO_result(jj, 349)) < fitnessgbest(jj)){
+            #gbest(jj,:) = random_structure_parameters(jj,:);
+            #fitnessgbest(jj) = abs(0.68-SWO_result(jj, 183)) + abs(0.62-SWO_result(jj, 349));   
+        #}
+       if ((sum(abs(target_transmission(1, :)-SWO_result(jj, :)))) < fitnessgbest(jj)){
+           gbest(jj,:) = random_structure_parameters(jj,:);
+           fitnessgbest(jj) = (sum(abs(target_transmission(1, :)-SWO_result(jj, :))));   
+       }
+            
+       # 群体最优更新
+       #if(abs(0.68-SWO_result(jj, 183)) + abs(0.62-SWO_result(jj, 349)) < fitnesszbest){
+            #zbest = random_structure_parameters(jj,:);
+            #fitnesszbest = abs(0.68-SWO_result(jj, 183)) + abs(0.62-SWO_result(jj, 349));     
+       #} 
+       if((sum(abs(target_transmission(1, :)-SWO_result(jj, :)))) < fitnesszbest){
+            zbest = random_structure_parameters(jj,:);
+            fitnesszbest = (sum(abs(target_transmission(1, :)-SWO_result(jj, :))));     
+       }
+    
+    }
+    
+    write('gbest.txt',num2str(ite));
+    write('gbest.txt',num2str(gbest));
+    write('fitnessgbest.txt',num2str(ite));
+    write('fitnessgbest.txt',num2str(fitnessgbest));
+    write('zbest.txt',num2str(ite));
+    write('zbest.txt',num2str(zbest));
+    write('fitnesszbest.txt',num2str(ite));
+    write('fitnesszbest.txt',num2str(fitnesszbest));    
+      
+}

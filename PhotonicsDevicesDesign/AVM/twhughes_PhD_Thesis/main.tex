@@ -1,0 +1,81 @@
+% Stanford University PhD thesis style -- modifications to the report style
+% This is unofficial so you should always double check against the
+% Registrar's office rules
+% See http://library.stanford.edu/research/bibliography-management/latex-and-bibtex
+% 
+% Example of use below
+% See the suthesis-2e.sty file for documentation
+%
+\documentclass{report}
+\usepackage{suthesis-2e}
+
+% external packages
+\usepackage{graphicx}         % for figures
+\usepackage[utf8x]{inputenc}  % for dealing with unicode in bib file apparently
+\usepackage[numbers]{natbib}  % for citenum
+\usepackage{bm}               % bold greek symbols
+\usepackage{amsmath}          % math stuff
+\usepackage{hyperref}         % url
+
+\dept{Applied Physics}
+
+\begin{document}
+
+\title{Adjoint-Based Optimization and Inverse Design of Photonic Devices}
+
+\author{Tyler William Hughes}
+
+\principaladviser{Shanhui Fan}
+\firstreader{Robert L. Byer}
+\secondreader{Olav Solgaard}
+% \thirdreader{Mark Brongersma} %if needed
+% \fourthreader{Amir Safavi-Naeini} %if needed
+ 
+\beforepreface
+\prefacesection{Abstract}
+\input{preface/abstract.tex}
+\prefacesection{Acknowledgments}
+\input{preface/acknowledgements.tex}
+\afterpreface
+
+\input{commands.tex}
+
+% ================ MAIN TEXT ================== %
+
+\chapter{Introduction}
+\input{chapters/1_Introduction.tex}
+
+\chapter{Optimization of Laser-Driven Particle Accelerators}
+\input{chapters/2_ACHIP_adjoint.tex}
+
+\chapter{Integrated Photonic Circuit for Accelerators on a Chip}
+\input{chapters/3_ACHIP_PIC.tex}
+
+\chapter{Training of Optical Neural Networks}
+\input{chapters/4_ONN.tex}
+
+\chapter{Wave-Based Analog Recurrent Neural Networks}
+\input{chapters/5_Wave_RNN}
+
+\chapter{Extension of Adjoint Method to Nonlinear Systems}
+\input{chapters/6_Adjoint_Nonlinear.tex}
+
+\chapter{Conclusion and Final Remarks}
+\input{chapters/7_Conclusion.tex}
+
+% ================ APPENDIX =================== %
+
+\appendix
+
+\chapter{Simulation of Photonic Neural Networks}
+\input{appendix/1_ANN_Simulation.tex}
+
+\chapter{Backpropagation for Nonholomorphic Activations}
+\input{appendix/2_Nonholomorphic_backprop.tex}
+
+% ============== BIBLIOGRAPHY ================= %,
+
+\bibliographystyle{plain}
+\bibliography{bib/bib_main,bib/bib_DLA,bib/bib_tree,bib/bib_MZI,bib/bib_insitu,bib/bib_angler}
+
+\end{document}

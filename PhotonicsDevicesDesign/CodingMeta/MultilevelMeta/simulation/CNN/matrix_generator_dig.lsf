@@ -1,0 +1,23 @@
+#生成随机矩阵并将其保存在matrix文件夹中，便于multilevel metamaterial结构读取
+pixel = 6;
+iter = 5000;
+threshold = 60;
+
+for(index=0:iter){
+    
+Q_MATRIX = round(randmatrix(pixel,pixel)*100);
+
+for (i = 1:pixel){
+    for(j=1:pixel){
+        if(Q_MATRIX(i, j)<threshold){
+            Q_MATRIX(i, j)=0;
+        }else{
+            Q_MATRIX(i, j)=100;
+        }    
+            
+    }        
+}
+
+write('al_matrix_dig/ma_'+num2str(index)+'.txt', num2str(Q_MATRIX));
+
+} 

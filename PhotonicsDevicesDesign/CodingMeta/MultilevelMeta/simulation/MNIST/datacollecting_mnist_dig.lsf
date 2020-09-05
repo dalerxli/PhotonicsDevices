@@ -1,0 +1,80 @@
+#通过读入随机生成矩阵，产生相应结构，z方向上单位变化量为2nm
+NIND=1;
+
+iter=1800;
+
+pixel=8;        #设置结构尺寸pixel*pixel（如：10x10）
+
+structure_result_new = matrix(NIND, pixel*pixel);
+
+TRANSMISSION = 1500; #设置频谱采样点数
+transmission_result = matrix(NIND, TRANSMISSION);
+reflection_result = matrix(NIND, TRANSMISSION);
+xi_result = matrix(NIND, TRANSMISSION);
+
+#通过for循环遍历matrix文件夹中生成的随机矩阵，现在是仿真前10个参数。
+for(i=0:iter){
+   
+    select('structure group');
+    switchtolayout;
+    set('index', NIND);
+    set('pixel',pixel);
+    
+    ?msg = "ite="+num2str(i);
+       
+    Q_MATRIX=readdata('data_skl_mnist_dig/ma_'+num2str(i)+'.txt');  #此处更改读入矩阵，进而更改二维码结构
+    for (jj=1:pixel)
+    {
+    structure_result_new(NIND,(jj-1)*pixel+1:jj*pixel) = Q_MATRIX(jj, 1:pixel);
+    }
+    Chrom_new = structure_result_new;
+    # 新结构参数Q_MATRIX_NEW覆写Q_MATTRIX_1
+    for (line_num = 1: NIND){
+        Q_MATRIX_NEW = zeros(pixel, pixel);
+        line = Chrom_new(line_num, :);
+        for (line_num_new = 1:pixel){
+            Q_MATRIX_NEW(line_num_new,:) = line(1,(line_num_new-1)*pixel+1:line_num_new*pixel);    
+        }
+        del('Q_MATRIX_'+num2str(line_num)+'.txt');
+        write('Q_MATRIX_'+num2str(line_num)+'.txt', num2str(Q_MATRIX_NEW));   
+          
+    }  
+    
+    runsetup;
+    ##更新光源
+    switchtolayout;
+    select('source');
+ 
+    run;
+    #运行得到新透射谱数据
+    for (kk=1:100){
+         if (haveresult('transmission','T') and haveresult('reflection','T')){
+            #反射谱 
+             temp1=getresult('reflection','T');
+             reflection_result(NIND,:)=pinch(temp1.T);
+            #透射谱
+             temp=getresult('transmission','T');
+             transmission_result(NIND,:)=pinch(temp.T);
+             kk=100;
+         }
+         run;
+    }
+    
+    #保存透射谱到tr文件夹中
+    xi_result=ones(NIND, TRANSMISSION)-reflection_result+transmission_result;
+    write('al_skl_minst_te_dig_tr/tr_'+num2str(i)+'.txt',num2str(transmission_result));
+    write('al_skl_minst_te_dig_rf/rf_'+num2str(i)+'.txt',num2str(reflection_result));
+    write('al_skl_minst_te_dig_ab/ab_'+num2str(i)+'.txt',num2str(xi_result));
+    
+}
+
+
+
+    
+
+
+
+
+
+
+

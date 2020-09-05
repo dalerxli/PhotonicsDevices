@@ -1,0 +1,43 @@
+#生成随机矩阵并将其保存在matrix文件夹中，便于multilevel metamaterial结构读取
+pixel = 6;
+Q_MATRIX = round(randmatrix(pixel,pixel)*120);
+iter = 500;
+threshold = 80;
+
+Q_MATRIX_new = Q_MATRIX;
+
+for (i = 1:pixel){
+    for(j=1:pixel){
+        if(Q_MATRIX_new(i, j)<threshold){
+            Q_MATRIX_new(i, j)=0;
+        }else{
+            Q_MATRIX_new(i, j)=120;
+        }    
+            
+    }        
+}
+
+write('silicon_matrix_depth/ma_'+num2str(0)+'.txt', num2str(Q_MATRIX_new));
+
+for(index=1:iter){
+    
+    Q_MATRIX_new_iter = Q_MATRIX;
+    
+    for (i = 1:pixel){
+        for(j=1:pixel){
+            if(Q_MATRIX_new_iter(i, j)<threshold){
+                Q_MATRIX_new_iter(i, j)=0;
+            }else{
+                temp = round(randmatrix(1,1)*120);
+                if(temp<threshold){
+                   Q_MATRIX_new_iter(i, j)=60; 
+                }else{
+                   Q_MATRIX_new_iter(i, j)=120;                                     
+                }                 
+            }    
+        }        
+    }
+    
+    write('silicon_matrix_depth/ma_'+num2str(index)+'.txt',num2str(Q_MATRIX_new_iter));
+
+} 

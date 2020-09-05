@@ -1,0 +1,238 @@
+#删除历史记录
+del('Chrom.txt');
+del('Chrom_new.txt');
+del('FitnV.txt');
+del('ObjV.txt');
+del('Chrom_trace.txt');
+del('SelCh1.txt');
+del('SelCh2.txt');
+del('SelCh3.txt');
+del('The_best.txt');
+#---------------------------
+switchtolayout;
+#波长范围，500:100:2000nm
+lambda=(500:100:2000)*1e-9;
+#对应角频率
+w=2*pi*c/lambda;
+#Ag的Drude模型参数
+epsinf=3.7;
+wp=1.37e16;
+gamap=0.27e14;
+eps_m=epsinf-wp^2/(w^2+1i*gamap*w);
+#用来存不同波长的drude参数矩阵pp
+pp=matrix(length(lambda),3);
+#transpose表示矩阵转置
+pp(1:length(lambda),1)=transpose(lambda);
+pp(1:length(lambda),2)=transpose(real(eps_m));
+pp(1:length(lambda),3)=transpose(imag(eps_m));
+#自定义一个材料
+sampledData = [c/lambda,eps_m]; 
+setmaterial('Ag',"max coefficients",2); 
+setmaterial('Ag','sampled data',sampledData);
+#波导参数
+delta=10e-9;
+cavity1_l=400e-9;
+cavity1_w=400e-9;
+gap1=10e-9;
+gap2=10e-9;
+shift1=0*1e-9;
+shift2=100*1e-9;
+shift3=0*1e-9;
+shift4=70*1e-9;
+pixel=20;
+
+waveguide1_l=100e-9;
+waveguide1_w=100e-9;
+waveguide2_l=100e-9;
+waveguide2_w=100e-9;
+width_bottom=200e-9;
+width_top=400e-9;
+total_l=waveguide1_l+gap1+cavity1_l+gap2+waveguide2_l;
+
+#种群大小
+NIND = 40;
+cal = NIND;
+#初始生成种群
+for (kk = 1:NIND){
+   Q_MATRIX = round(randmatrix(pixel,pixel));
+   del('Q_MATRIX_'+num2str(kk)+'.txt');
+   write('Q_MATRIX_'+num2str(kk)+'.txt',num2str(Q_MATRIX)); 
+}
+
+# 最大遗传代数
+MAXGEN = 100; 
+# 开始演进类算法优化
+TRANSMISSION = 501;
+
+structure_result = matrix(NIND, pixel*pixel);
+transmission_result = matrix(NIND, TRANSMISSION);
+#设置记录历史最优变量
+The_best=matrix(MAXGEN);
+for (ite = 1: MAXGEN){
+    for (cal = 1:NIND){
+        ?msg = "遗传代数:"+num2str(ite);
+        ?msg = "第"+num2str(cal)+"个体";
+		switchtolayout;
+		# 执行第一次
+		select('structure group');
+		set('waveguide1_l',waveguide1_l);
+		set('waveguide1_w',waveguide1_w);
+		set('waveguide2_l',waveguide2_l);
+		set('waveguide2_w',waveguide2_w);
+		set('width_bottom',width_bottom);
+		set('width_top',width_top);
+
+		total_w=width_bottom+cavity1_w+width_top;
+		select('structure group');
+		set('cavity1_w',cavity1_w);
+		set('cavity1_l',cavity1_l);
+		set('gap1',gap1);
+		set('gap2',gap2);
+		set('shift1',shift1);
+		set('shift2',shift2);
+		set('shift3',shift3);
+		set('shift4',shift4);
+
+		select('structure group');
+		switchtolayout;
+		set('index',cal);
+		runsetup;
+		#设置仿真范围
+		select('FDTD');
+		set('x',total_l/2);
+		set('x span',total_l);
+		set('y',0);
+		set('y span',total_w);
+		#设置光源
+		select('source_1');
+		set('x',5e-9);
+		set('y',0);
+		set('y span',total_w);
+		#设置输入gap网格
+		select('mesh_input_gap');
+		set('x min',waveguide1_l);
+		set('x max',waveguide1_l+gap1);
+		set('y',0);
+		set('y span',waveguide1_w);
+		set('dx',gap1/5);
+		set('dy',cavity1_l/pixel/4);
+		#设置二维码网格
+		select('mesh_cavity1');
+		set('x',waveguide1_l+gap1+cavity1_l/2+shift1);
+		set('x span',cavity1_l);
+		set('y',shift2);
+		set('y span',cavity1_w);
+		set('dx',cavity1_l/pixel/4);
+		set('dy',cavity1_l/pixel/4);
+		#设置输出gap的网格
+		select('mesh_output_gap');
+		set('x min',waveguide1_l+gap1+cavity1_l);
+		set('x max',waveguide1_l+gap1+cavity1_l+gap2);
+		set('y',0);
+		set('y span',waveguide2_w);
+		set('dx',gap2/5);
+		set('dy',cavity1_l/pixel/4);
+		#设置monitor
+		select('transmission');
+		set('x',total_l);
+		set('y',0);
+		set('y span',total_w);
+		
+        # 获取结构参数
+        Q_MATRIX=readdata('Q_MATRIX_'+num2str(cal)+'.txt');
+        for (jj=1:pixel)
+        {
+            structure_result(cal,(jj-1)*pixel+1:jj*pixel) = Q_MATRIX(jj, 1:pixel);
+        }
+	#更新光源
+	select('source_1');
+	updatesourcemode;
+	run;
+		
+        for (kk=1:100){
+            if (haveresult('transmission','T')){
+			temp=getresult('transmission','T');
+			transmission_result(cal,:)=pinch(temp.T);
+			kk=100;
+		}
+		run;
+        }
+    }
+    # 作为参数输入遗传算法
+    matlabput(structure_result, transmission_result, NIND);
+    # 进行遗传
+    matlab("
+        GGAP = 0.90;
+        px = 0.3;
+        pm = 0.03;
+        Chrom = structure_result;
+        target_transmission = 1;   
+        ObjV = zeros(NIND, 1);	
+        for number = 1:NIND
+            ObjV(number,1) = abs(target_transmission-transmission_result(number, 417));
+        end
+        FitnV = ranking(ObjV);
+        SelCh1 = select('rws', Chrom, FitnV, GGAP)  ;  
+        SelCh2 = recombin('xovsp', SelCh1, px); 
+        SelCh3 = mut(SelCh2, pm);
+        Chrom_new = reins(Chrom, SelCh3);  
+        [best,index]=min(ObjV);	
+    "); 
+    #记录父代
+    matlabget(Chrom);
+    write('Chrom.txt',num2str(Chrom));  
+    #记录适应度历史
+    matlabget(ObjV);
+    ave_ObjV = mean(ObjV);
+    ?msg = "第"+num2str(ite)+"代平均适应度为："+num2str(ave_ObjV);
+    write('ObjV.txt',"代数："+num2str(ite));
+    write('ObjV.txt',"个体适应度分别为："+num2str(ObjV));
+    write('ObjV.txt',"平均适应度为："+num2str(ave_ObjV));
+    #记录FitnV
+    matlabget(FitnV);
+    write('FitnV.txt',"代数："+num2str(ite));
+    write('FitnV.txt',"FitnV:"+num2str(FitnV));
+    #记录选择
+    matlabget(SelCh1);
+    write('SelCh1.txt',num2str(SelCh1)); 
+    #记录重组
+    matlabget(SelCh2);
+    write('SelCh2.txt',num2str(SelCh2)); 
+    #记录变异
+    matlabget(SelCh3);
+    write('SelCh3.txt',num2str(SelCh3)); 
+    #记录新种群
+    matlabget(Chrom_new);
+    write('Chrom_new.txt',"第"+num2str(ite)+"代新种群："); 
+    write('Chrom_new.txt',num2str(Chrom_new)); 
+    #记录历史最优个体
+    matlabget(best);
+    matlabget(index);
+    structure_temp=structure_result(index,:);
+    write('Chrom_trace.txt',"第"+num2str(ite)+"代最优个体：");
+    write('Chrom_trace.txt',"Number:"+num2str(index));
+    write('Chrom_trace.txt',"透射率为："+num2str(transmission_result(index,417)));
+    write('Chrom_trace.txt',"个体结构为:");
+    write('Chrom_trace.txt',num2str(structure_temp));
+    
+    #记录历史最优解
+    The_best(ite) = transmission_result(index,417);
+    #新一代个体转化为矩阵存储
+    for (line_num = 1: NIND){
+        Q_MATRIX_NEW = zeros(pixel, pixel);
+        line = Chrom_new(line_num, :);
+        for (line_num_new = 1:pixel){
+            Q_MATRIX_NEW(line_num_new,:) = line(1,(line_num_new-1)*pixel+1:line_num_new*pixel);    
+        }
+        del('Q_MATRIX_'+num2str(line_num)+'.txt');
+        write('Q_MATRIX_'+num2str(line_num)+'.txt', num2str(Q_MATRIX_NEW));     
+    }          
+}
+
+    write('The_best.txt',num2str(The_best));
+
+
+
+
+
+

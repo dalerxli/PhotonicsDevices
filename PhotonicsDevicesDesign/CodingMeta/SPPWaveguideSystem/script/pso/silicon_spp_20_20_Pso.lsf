@@ -1,0 +1,327 @@
+switchtolayout;
+#波长范围，500:100:2000nm
+lambda=(500:100:2000)*1e-9;
+#对应角频率
+w=2*pi*c/lambda;
+#Ag的Drude模型参数
+epsinf=3.7;
+wp=1.37e16;
+gamap=0.27e14;
+eps_m=epsinf-wp^2/(w^2+1i*gamap*w);
+#用来存不同波长的drude参数矩阵pp
+pp=matrix(length(lambda),3);
+#transpose表示矩阵转置
+pp(1:length(lambda),1)=transpose(lambda);
+pp(1:length(lambda),2)=transpose(real(eps_m));
+pp(1:length(lambda),3)=transpose(imag(eps_m));
+#自定义一个材料
+sampledData = [c/lambda,eps_m]; 
+setmaterial('Ag',"max coefficients",2); 
+setmaterial('Ag','sampled data',sampledData);
+#波导参数
+delta=10e-9;
+cavity1_l=400e-9;
+cavity1_w=400e-9;
+gap1=10e-9;
+gap2=10e-9;
+shift1=0*1e-9;
+shift2=100*1e-9;
+shift3=0*1e-9;
+shift4=70*1e-9;
+pixel=20;
+
+waveguide1_l=100e-9;
+waveguide1_w=100e-9;
+waveguide2_l=100e-9;
+waveguide2_w=100e-9;
+width_bottom=200e-9;
+width_top=400e-9;
+total_l=waveguide1_l+gap1+cavity1_l+gap2+waveguide2_l;
+
+#种群大小
+NIND = 50;
+#初始生成种群
+for (kk = 1:NIND){
+#随机生成一个20*20的0,1矩阵
+   Q_MATRIX = round(randmatrix(pixel,pixel));
+#删掉之前的矩阵文件
+   del('Q_MATRIX_'+num2str(kk)+'.txt');
+#重新写入新的矩阵
+   write('Q_MATRIX_'+num2str(kk)+'.txt',num2str(Q_MATRIX));
+}
+#常数
+c1 = 1.49445;
+c2 = 1.49445;
+#初始化速度
+Vmax=1;
+Vmin=-1;
+V = (randmatrix(NIND,400)-0.5)*2*Vmax; #限制在（-1,1）
+#最大遗传代数
+MAXGEN = 100; 
+#开始演进类算法优化
+TRANSMISSION = 501;
+#随机结构参数
+random_structure_parameters = matrix(NIND, pixel*pixel);
+#结构透射谱
+transmission_result = matrix(NIND, TRANSMISSION);
+for (cal = 1:NIND){
+    ?msg = "初始化:"+num2str(cal);
+    select('structure group');
+    switchtolayout;
+    set('waveguide1_l',waveguide1_l);
+    set('waveguide1_w',waveguide1_w);
+    set('waveguide2_l',waveguide2_l);
+    set('waveguide2_w',waveguide2_w);
+    set('width_bottom',width_bottom);
+    set('width_top',width_top);
+
+    total_w=width_bottom+cavity1_w+width_top;
+    select('structure group');
+    set('cavity1_w',cavity1_w);
+    set('cavity1_l',cavity1_l);
+    set('gap1',gap1);
+    set('gap2',gap2);
+    set('shift1',shift1);
+    set('shift2',shift2);
+    set('shift3',shift3);
+    set('shift4',shift4);
+
+    select('structure group');
+    switchtolayout;
+    set('index', cal);
+    runsetup;
+    #设置仿真范围
+    select('FDTD');
+    set('x',total_l/2);
+    set('x span',total_l);
+    set('y',0);
+    set('y span',total_w);
+    #设置光源
+    select('source_1');
+    set('x',5e-9);
+    set('y',0);
+    set('y span',total_w);
+    #设置输入gap网格
+    select('mesh_input_gap');
+    set('x min',waveguide1_l);
+    set('x max',waveguide1_l+gap1);
+    set('y',0);
+    set('y span',waveguide1_w);
+    set('dx',gap1/5);
+    set('dy',cavity1_l/pixel/4);
+    #设置二维码网格
+    select('mesh_cavity1');
+    set('x',waveguide1_l+gap1+cavity1_l/2+shift1);
+    set('x span',cavity1_l);
+    set('y',shift2);
+    set('y span',cavity1_w);
+    set('dx',cavity1_l/pixel/4);
+    set('dy',cavity1_l/pixel/4);
+    #设置输出gap的网格
+    select('mesh_output_gap');
+    set('x min',waveguide1_l+gap1+cavity1_l);
+    set('x max',waveguide1_l+gap1+cavity1_l+gap2);
+    set('y',0);
+    set('y span',waveguide2_w);
+    set('dx',gap2/5);
+    set('dy',cavity1_l/pixel/4);
+    #设置monitor
+    select('transmission');
+    set('x',total_l);
+    set('y',0);
+    set('y span',total_w);
+    
+    # 获取结构参数
+    Q_MATRIX=readdata('Q_MATRIX_'+num2str(cal)+'.txt');
+    
+    for (jj=1:pixel)
+    {
+        random_structure_parameters(cal,(jj-1)*pixel+1:jj*pixel) = Q_MATRIX(jj, 1:pixel);
+    }
+    select('source_1');
+    updatesourcemode;
+    run;
+    
+    # 防止仿真中断
+    for (kk=1:100){
+         if (haveresult('transmission','T')){
+             temp=getresult('transmission','T');
+             transmission_result(cal,:)=pinch(temp.T);
+             kk=100;
+            }
+         run;
+    }
+}
+#matlab计算适应度，找出个体极值和群体极值
+matlabput(random_structure_parameters, transmission_result, NIND);
+matlab("
+
+    ObjV = zeros(NIND, 1);
+    target_transmission = 1;
+    
+    for number = 1:NIND;
+        ObjV(number,1) = abs(target_transmission-transmission_result(number, 417));
+    end
+    
+    # 个体极值和群体极值
+    [bestfitness,bestindex] = min(ObjV);
+    # 全局最佳参数    
+    zbest=random_structure_parameters(bestindex,:);
+    # 个体最佳参数  
+    gbest=random_structure_parameters;
+    # 个体最佳适应度
+    fitnessgbest=ObjV;
+    # 全局最佳适应度值
+    fitnesszbest=bestfitness; 
+");
+
+#从matlab取得结果
+matlabget(zbest);
+matlabget(gbest);
+matlabget(fitnessgbest); 
+matlabget(fitnesszbest); 
+
+#PSO迭代优化
+for (ite = 1: MAXGEN){
+    SWO_result=matrix(NIND,501);
+    for (ii = 1:NIND){
+        ?msg = "迭代数："+num2str(ite);
+        ?msg = "粒子数:"+num2str(ii);
+        # 速度更新
+        V(ii,:) = V(ii,:) + c1*rand*(gbest(ii,:) - random_structure_parameters(ii,:)) + c2*rand*(zbest - random_structure_parameters(ii,:));
+        # 位置更新        
+        for (kk=1:400){
+            s_v = 1/(1+exp(-V(ii,kk)));
+            
+            if(rand<=s_v){
+                random_structure_parameters(ii,kk) = 1;                
+            }else
+	     {
+                random_structure_parameters(ii,kk) = 0;   
+            }          
+            
+        }
+        
+        # 保存为本地文件
+        for (line_num = 1: NIND){
+        Q_MATRIX_NEW = zeros(pixel, pixel);
+        line = random_structure_parameters(line_num, :);
+        for (line_num_new = 1:pixel){
+            Q_MATRIX_NEW(line_num_new,:) = line(1,(line_num_new-1)*pixel+1:line_num_new*pixel);    
+        }
+        del('Q_MATRIX_'+num2str(line_num)+'.txt');
+        write('Q_MATRIX_'+num2str(line_num)+'.txt', num2str(Q_MATRIX_NEW));     
+        } 
+    #运行每个个体
+    select('structure group');
+    switchtolayout;
+    set('waveguide1_l',waveguide1_l);
+    set('waveguide1_w',waveguide1_w);
+    set('waveguide2_l',waveguide2_l);
+    set('waveguide2_w',waveguide2_w);
+    set('width_bottom',width_bottom);
+    set('width_top',width_top);
+
+    total_w=width_bottom+cavity1_w+width_top;
+    select('structure group');
+    set('cavity1_w',cavity1_w);
+    set('cavity1_l',cavity1_l);
+    set('gap1',gap1);
+    set('gap2',gap2);
+    set('shift1',shift1);
+    set('shift2',shift2);
+    set('shift3',shift3);
+    set('shift4',shift4);
+
+    select('structure group');
+    switchtolayout;
+    set('index', ii);
+    runsetup;
+    #设置仿真范围
+    select('FDTD');
+    set('x',total_l/2);
+    set('x span',total_l);
+    set('y',0);
+    set('y span',total_w);
+    #设置光源
+    select('source_1');
+    set('x',5e-9);
+    set('y',0);
+    set('y span',total_w);
+    #设置输入gap网格
+    select('mesh_input_gap');
+    set('x min',waveguide1_l);
+    set('x max',waveguide1_l+gap1);
+    set('y',0);
+    set('y span',waveguide1_w);
+    set('dx',gap1/5);
+    set('dy',cavity1_l/pixel/4);
+    #设置二维码网格
+    select('mesh_cavity1');
+    set('x',waveguide1_l+gap1+cavity1_l/2+shift1);
+    set('x span',cavity1_l);
+    set('y',shift2);
+    set('y span',cavity1_w);
+    set('dx',cavity1_l/pixel/4);
+    set('dy',cavity1_l/pixel/4);
+    #设置输出gap的网格
+    select('mesh_output_gap');
+    set('x min',waveguide1_l+gap1+cavity1_l);
+    set('x max',waveguide1_l+gap1+cavity1_l+gap2);
+    set('y',0);
+    set('y span',waveguide2_w);
+    set('dx',gap2/5);
+    set('dy',cavity1_l/pixel/4);
+    #设置monitor
+    select('transmission');
+    set('x',total_l);
+    set('y',0);
+    set('y span',total_w);
+    
+    # 获取新的结构参数
+    Q_MATRIX=readdata('Q_MATRIX_'+num2str(ii)+'.txt');
+
+    select('source_1');
+    updatesourcemode;
+    run;
+    
+    # 防止仿真中断
+    for (kk=1:100){
+         if (haveresult('transmission','T')){
+             temp=getresult('transmission','T');
+             SWO_result(ii,:)=pinch(temp.T);
+             kk=100;
+            }
+         run;
+        }
+        
+    }
+    #更新最优解
+    target_transmission = 1;    
+    for (jj=1:NIND){
+        # 个体最优更新
+       if (abs(target_transmission-SWO_result(jj, 417)) < fitnessgbest(jj)){
+           gbest(jj,:) = random_structure_parameters(jj,:);
+           fitnessgbest(jj) = abs(target_transmission-SWO_result(jj, 417));   
+       }
+            
+       # 群体最优更新
+       if (abs(target_transmission-SWO_result(jj, 417)) < fitnesszbest){
+            zbest = random_structure_parameters(jj,:);
+            fitnesszbest = abs(target_transmission-SWO_result(jj, 417));     
+           }
+          }
+    #记录gbest和结构
+    write('gbest.txt',num2str(ite));
+    write('gbest.txt',num2str(gbest));
+    write('fitnessgbest.txt',num2str(ite));
+    write('fitnessgbest.txt',num2str(fitnessgbest));
+    #记录zbest和结构
+    write('fitnesszbest.txt',num2str(ite));
+    write('fitnesszbest.txt',num2str(fitnesszbest));   
+    write('zbest.txt',num2str(ite));
+    write('zbest.txt',num2str(zbest));
+}
+
+
+
